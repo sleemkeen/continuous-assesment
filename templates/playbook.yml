@@ -87,4 +87,113 @@
         msg:
           - "Nginx version: {{ nginx_version.stderr }}"
           - "Docker version: {{ docker_version.stdout }}"
+    
+    - name: Create backend directory
+      file:
+        path: /home/ubuntu/backend
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+    
+    - name: Copy backend files to server
+      copy:
+        src: "{{ playbook_dir }}/../backend/"
+        dest: /home/ubuntu/backend/
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+    
+    - name: Make backend directory executable
+      file:
+        path: /home/ubuntu/backend
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+        recurse: yes
+    
+    - name: Stop existing backend container
+      shell: docker compose down
+      args:
+        chdir: /home/ubuntu/backend
+      ignore_errors: yes
+      become: yes
+    
+    - name: Build and start backend with Docker Compose
+      shell: docker compose up -d --build
+      args:
+        chdir: /home/ubuntu/backend
+      become: yes
+    
+    - name: Wait for backend to be ready
+      wait_for:
+        port: 3000
+        delay: 5
+        timeout: 60
+    
+    - name: Configure Nginx as reverse proxy
+      copy:
+        dest: /etc/nginx/sites-available/backend
+        content: |
+          server {
+              listen 80;
+              server_name _;
+
+              location / {
+                  proxy_pass http://localhost:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+        owner: root
+        group: root
+        mode: '0644'
+    
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+    
+    - name: Enable backend site
+      file:
+        src: /etc/nginx/sites-available/backend
+        dest: /etc/nginx/sites-enabled/backend
+        state: link
+    
+    - name: Test Nginx configuration
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+    
+    - name: Reload Nginx
+      systemd:
+        name: nginx
+        state: reloaded
+    
+    - name: Verify backend is running
+      uri:
+        url: http://localhost:3000
+        return_content: yes
+      register: backend_test
+    
+    - name: Display backend response
+      debug:
+        msg: "Backend is running: {{ backend_test.json.message }}"
+    
+    - name: Test Nginx proxy
+      uri:
+        url: http://localhost
+        return_content: yes
+      register: proxy_test
+    
+    - name: Display proxy response
+      debug:
+        msg: "Nginx proxy is working: {{ proxy_test.json.message }}"
 
