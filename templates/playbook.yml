@@ -24,6 +24,7 @@
           - gnupg
           - lsb-release
           - software-properties-common
+          - git
         state: present
     
     - name: Install Nginx
@@ -72,65 +73,69 @@
         groups: docker
         append: yes
     
-    - name: Verify Nginx installation
-      command: nginx -v
-      register: nginx_version
-      changed_when: false
-    
-    - name: Verify Docker installation
-      command: docker --version
-      register: docker_version
-      changed_when: false
-    
-    - name: Display versions
-      debug:
-        msg:
-          - "Nginx version: {{ nginx_version.stderr }}"
-          - "Docker version: {{ docker_version.stdout }}"
-    
-    - name: Create backend directory
+    - name: Remove existing backend directory if present
       file:
         path: /home/ubuntu/backend
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0755'
+        state: absent
+      become_user: ubuntu
     
-    - name: Copy backend files to server
-      copy:
-        src: "{{ playbook_dir }}/../backend/"
-        dest: /home/ubuntu/backend/
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
-    
-    - name: Make backend directory executable
-      file:
-        path: /home/ubuntu/backend
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0755'
-        recurse: yes
+    - name: Clone backend repository from GitHub
+      git:
+        repo: https://github.com/sleemkeen/backend-server.git
+        dest: /home/ubuntu/backend
+        version: main
+        force: yes
+      become_user: ubuntu
+
+    - name: Install Node.js dependencies
+      shell: npm install
+      args:
+        chdir: /home/ubuntu/backend
+      become_user: ubuntu
     
     - name: Stop existing backend container
       shell: docker compose down
       args:
         chdir: /home/ubuntu/backend
       ignore_errors: yes
-      become: yes
+      become_user: ubuntu
     
     - name: Build and start backend with Docker Compose
       shell: docker compose up -d --build
       args:
         chdir: /home/ubuntu/backend
-      become: yes
+      become_user: ubuntu
+    
+    - name: Show docker compose logs
+      shell: docker compose logs
+      args:
+        chdir: /home/ubuntu/backend
+      become_user: ubuntu
+      register: docker_logs
+    
+    - name: Display docker logs
+      debug:
+        msg: "{{ docker_logs.stdout_lines }}"
+    
+    - name: Check if container is running
+      shell: docker compose ps
+      args:
+        chdir: /home/ubuntu/backend
+      become_user: ubuntu
+      register: docker_ps
+    
+    - name: Display running containers
+      debug:
+        msg: "{{ docker_ps.stdout_lines }}"
     
     - name: Wait for backend to be ready
       wait_for:
+        host: 127.0.0.1
         port: 3000
-        delay: 5
-        timeout: 60
+        delay: 10
+        timeout: 120
+        state: started
+      delegate_to: "{{ inventory_hostname }}"
     
     - name: Configure Nginx as reverse proxy
       copy:

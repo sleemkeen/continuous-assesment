@@ -37,3 +37,6 @@ terraform.rc
 
 node_modules/
 backend/node_modules/
+
+newkeys
+newkeys.pub
