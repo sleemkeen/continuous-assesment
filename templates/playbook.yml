@@ -87,6 +87,14 @@
         force: yes
       become_user: ubuntu
 
+    - name: Install Node.js and npm
+      apt:
+        name:
+          - nodejs
+          - npm
+        state: present
+        update_cache: yes
+
     - name: Install Node.js dependencies
       shell: npm install
       args:
