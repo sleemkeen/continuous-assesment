@@ -184,7 +184,7 @@ ssh: connect to host x.x.x.x port 22: Connection refused
 1. Wait a few minutes for the instance to fully boot
 2. Check security group allows your IP:
    ```bash
-   terraform state show aws_security_group.allow_ssh
+   terraform state show aws_security_group.web_security_group
    ```
 3. Verify instance is running:
    ```bash

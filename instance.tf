@@ -8,26 +8,8 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-resource "aws_instance" "web" {
- ami =  data.aws_ami.ubuntu.id
- instance_type = var.instance_type.web
- subnet_id = module.vpc.public_subnets[0]
- vpc_security_group_ids = [aws_security_group.allow_ssh.id]
- key_name = aws_key_pair.mykey.key_name
- 
- tags = {
-    Name = "free-tier-instance"
- }
- provisioner "local-exec" {
-   command = "printf '[web_servers]\\n%s ansible_user=ubuntu ansible_ssh_private_key_file=%s\\n' '${self.public_ip}' '${abspath(path.module)}/newkeys' > ${path.module}/inventory.ini"
- }
- provisioner "local-exec" {
-   command = "sleep 30 && ANSIBLE_CONFIG=${path.module}/templates/ansible.cfg ansible-playbook -i ${path.module}/inventory.ini ${path.module}/templates/playbook.yml"
- }
-}
-
-resource "aws_security_group" "allow_ssh" {
-  name        = "allow_ssh"
+resource "aws_security_group" "web_security_group" {
+  name        = "web_security_group"
   description = "Allow SSH inbound traffic and all outbound traffic"
   vpc_id      = module.vpc.vpc_id
 
@@ -56,11 +38,57 @@ resource "aws_security_group" "allow_ssh" {
   }
 
   tags = {
-    Name = "allow_ssh"
+    Name = "web_security_group"
   }
 }
 
 resource "aws_key_pair" "mykey" {
   key_name   = "mykey-demo"
   public_key = file("${path.module}/newkeys.pub")
+}
+
+# Jenkins Security Group
+resource "aws_security_group" "jenkins" {
+  name        = "jenkins_security_group"
+  description = "Allow Jenkins ports and SSH inbound traffic"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description      = "SSH"
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  ingress {
+    description      = "Jenkins Web UI"
+    from_port        = 8080
+    to_port          = 8080
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  ingress {
+    description      = "Jenkins Agent Communication"
+    from_port        = 50000
+    to_port          = 50000
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  tags = {
+    Name = "jenkins_sg"
+  }
 }
